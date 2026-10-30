@@ -1,0 +1,6 @@
+{
+  "accuracy": 0.985,
+  "f1": 0.9716,
+  "duration_mae_hours": 0.1571,
+  "version": "v1"
+}

@@ -1,0 +1,24 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# IDE settings
+.idea/
+.vscode/
+
+# Environment variables and credentials
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Local monitoring output
+monitoring/predictions.csv

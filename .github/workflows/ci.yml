@@ -1,0 +1,26 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python train/train_model.py --version ci
+      - run: pytest -v
+  push-to-hub:
+    needs: test
+    if: github.ref == 'refs/heads/main' && vars.HF_MODEL_REPO != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python train/train_model.py --push --repo-id ${{ vars.HF_MODEL_REPO }} --version ${{ github.sha }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}

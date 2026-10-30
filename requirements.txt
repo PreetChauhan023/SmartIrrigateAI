@@ -20,3 +20,4 @@ langchain-huggingface
 huggingface-hub
 transformers
 torch
+langchain-ollama

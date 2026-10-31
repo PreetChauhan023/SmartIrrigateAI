@@ -1,259 +1,245 @@
 """
 SmartIrrigate AI
-Multilingual RAG-Based Irrigation Advisory Assistant
-
-Technologies:
-- Streamlit
-- Hugging Face Multilingual Embeddings
-- FAISS Vector Database
-- LangChain
-- Ollama (Qwen 2.5 1.5B)
+Multilingual RAG-Based Agricultural Advisory Chatbot
+with Integrated ML Irrigation Prediction
 
 Run:
 python -m streamlit run app/streamlit_app.py
 """
 
 import sys
-from datetime import datetime
 from pathlib import Path
+from datetime import datetime
 
 import streamlit as st
 
-# --------------------------------------------------
+
+# ============================================================
 # PROJECT PATH
-# --------------------------------------------------
+# ============================================================
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
-from app.rag_demo import DemoRetriever, ask, DEFAULT_LLM
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
-# --------------------------------------------------
+# ============================================================
+# IMPORT EXISTING PROJECT MODULES
+# ============================================================
+
+from app.rag_demo import (
+    DemoRetriever,
+    ask,
+    DEFAULT_LLM,
+)
+
+from app.prediction_chat import (
+    is_prediction_request,
+    extract_inputs,
+    answer_prediction,
+)
+
+
+# ============================================================
 # PAGE CONFIGURATION
-# --------------------------------------------------
+# ============================================================
 
 st.set_page_config(
-    page_title="SmartIrrigateAI",
+    page_title="SmartIrrigate AI",
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 
-# --------------------------------------------------
-# THEME / STYLING
-# --------------------------------------------------
+# ============================================================
+# CUSTOM WHITE AND GREEN THEME
+# ============================================================
 
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    @import url(
+        'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
+    );
 
     :root {
-        --green-900: #0F3D24;
-        --green-800: #14532D;
-        --green-700: #166534;
-        --green-600: #16A34A;
-        --green-100: #DCFCE7;
-        --green-50:  #F0FDF4;
-        --ink:       #0F172A;
-        --muted:     #64748B;
-        --line:      #E2E8F0;
-        --bg:        #F4F7F5;
-        --card:      #FFFFFF;
-        --amber-bg:  #FFFBEB;
-        --amber-bd:  #FDE68A;
-        --amber-tx:  #92400E;
+        --green-dark: #0F3D24;
+        --green-primary: #166534;
+        --green-light: #DCFCE7;
+        --green-bg: #F0FDF4;
+
+        --background: #F4F7F5;
+        --white: #FFFFFF;
+
+        --text: #0F172A;
+        --muted: #64748B;
+        --border: #E2E8F0;
     }
 
-    html, body, [class*="css"], .stApp {
+    html, body, .stApp {
         font-family: 'Inter', sans-serif;
     }
 
-    .stApp { background-color: var(--bg); }
-
-    /* Hide default Streamlit chrome */
-    #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+    .stApp {
+        background-color: var(--background);
+        color: var(--text);
+    }
 
     .block-container {
-        max-width: 100%;
-        padding-top: 1.2rem;
-        padding-left: 3rem;
-        padding-right: 3rem;
-        padding-bottom: 6rem;
+        max-width: 1250px;
+        padding-top: 1.5rem;
+        padding-bottom: 5rem;
     }
 
-    /* Keep headings inside answers proportionate */
-    [data-testid="stChatMessage"] h1,
-    [data-testid="stChatMessage"] h2,
-    [data-testid="stChatMessage"] h3 {
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin: 1rem 0 0.4rem 0;
-        padding: 0;
+    /* Sidebar */
+
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 1px solid var(--border);
     }
 
-    /* ---------- Hero ---------- */
+    /* Hero */
+
     .hero {
-        background: linear-gradient(135deg, var(--green-900) 0%, var(--green-700) 60%, #22A053 100%);
+        background: linear-gradient(
+            135deg,
+            #0F3D24,
+            #166534,
+            #22A053
+        );
+
+        padding: 30px;
         border-radius: 18px;
-        padding: 28px 32px;
-        color: #fff;
-        box-shadow: 0 10px 30px rgba(20, 83, 45, 0.18);
-        margin-bottom: 18px;
+        margin-bottom: 24px;
+        color: white;
     }
-    .hero-top { display: flex; align-items: center; gap: 14px; }
-    .hero-logo {
-        width: 52px; height: 52px; border-radius: 14px;
-        background: rgba(255,255,255,0.16);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 28px;
-    }
+
     .hero h1 {
-        color: #fff !important;
-        font-size: 1.7rem; font-weight: 700; margin: 0; padding: 0;
-        letter-spacing: -0.02em;
-    }
-    .hero .tagline { color: #D1FAE5; font-size: 0.95rem; margin-top: 2px; }
-    .hero p.desc {
-        color: #ECFDF5; font-size: 0.95rem; line-height: 1.55;
-        margin: 16px 0 14px 0; max-width: 720px;
-    }
-    .chip {
-        display: inline-block;
-        background: rgba(255,255,255,0.16);
-        border: 1px solid rgba(255,255,255,0.28);
-        color: #fff; font-size: 0.78rem; font-weight: 500;
-        padding: 4px 12px; border-radius: 999px; margin: 0 6px 6px 0;
+        color: white !important;
+        font-size: 30px;
+        font-weight: 700;
+        margin-bottom: 8px;
     }
 
-    /* ---------- Stat cards ---------- */
-    .stat {
-        background: var(--card);
-        border: 1px solid var(--line);
+    .hero p {
+        color: #ECFDF5;
+        font-size: 15px;
+        line-height: 1.7;
+        margin-bottom: 0;
+    }
+
+    /* Feature Cards */
+
+    .feature-card {
+        background: white;
+        border: 1px solid var(--border);
         border-radius: 14px;
-        padding: 14px 18px;
+        padding: 20px;
+        min-height: 130px;
+        margin-bottom: 12px;
     }
-    .stat .label {
-        color: var(--muted); font-size: 0.74rem; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.06em;
-    }
-    .stat .value { color: var(--green-800); font-size: 1.6rem; font-weight: 700; margin-top: 2px; }
 
-    /* ---------- Section titles ---------- */
-    .section-title {
-        color: var(--ink); font-size: 1.05rem; font-weight: 600;
-        margin: 22px 0 10px 0;
+    .feature-icon {
+        font-size: 26px;
+        margin-bottom: 8px;
     }
-    .section-sub { color: var(--muted); font-size: 0.88rem; margin-top: -6px; margin-bottom: 12px; }
 
-    /* ---------- Feature cards ---------- */
-    .feature {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 18px;
-        height: 100%;
+    .feature-title {
+        color: #0F3D24;
+        font-weight: 600;
+        font-size: 15px;
     }
-    .feature .icon { font-size: 1.5rem; }
-    .feature .title { font-weight: 600; color: var(--ink); margin-top: 6px; font-size: 0.95rem; }
-    .feature .text { color: var(--muted); font-size: 0.85rem; margin-top: 4px; line-height: 1.5; }
 
-    /* ---------- Chat ---------- */
+    .feature-description {
+        color: #64748B;
+        font-size: 13px;
+        margin-top: 6px;
+        line-height: 1.6;
+    }
+
+    /* Chat */
+
     [data-testid="stChatMessage"] {
-        background-color: var(--card);
-        border: 1px solid var(--line);
+        background-color: white;
+        border: 1px solid #E2E8F0;
         border-radius: 14px;
         padding: 14px 16px;
         margin-bottom: 12px;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     }
-    [data-testid="stChatMessage"] p { line-height: 1.65; }
+
+    [data-testid="stChatMessage"] p {
+        line-height: 1.7;
+    }
 
     [data-testid="stChatInput"] {
         border-radius: 14px;
-        border: 1px solid var(--line);
     }
+
+    /* Labels */
 
     .advisory-tag {
         display: inline-block;
-        background: var(--green-50);
-        color: var(--green-700);
-        border: 1px solid var(--green-100);
-        font-size: 0.7rem; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.06em;
-        padding: 3px 10px; border-radius: 999px; margin-bottom: 8px;
-    }
-    .meta { color: var(--muted); font-size: 0.75rem; margin-top: 6px; }
-
-    .source-card-title { color: var(--green-800); font-weight: 600; font-size: 0.9rem; }
-
-    /* ---------- Sidebar ---------- */
-    [data-testid="stSidebar"] {
-        background-color: #FFFFFF;
-        border-right: 1px solid var(--line);
-    }
-    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
-    .brand .logo {
-        width: 38px; height: 38px; border-radius: 10px;
-        background: var(--green-50); border: 1px solid var(--green-100);
-        display: flex; align-items: center; justify-content: center; font-size: 20px;
-    }
-    .brand .name { font-weight: 700; color: var(--green-800); font-size: 1.05rem; line-height: 1.1; }
-    .brand .sub { color: var(--muted); font-size: 0.75rem; }
-
-    .sys-row {
-        display: flex; justify-content: space-between; align-items: baseline;
-        padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 0.82rem;
-    }
-    .sys-row .k { color: var(--muted); }
-    .sys-row .v { color: var(--ink); font-weight: 500; text-align: right; }
-
-    .status-ok {
-        display: inline-flex; align-items: center; gap: 6px;
-        background: var(--green-50); color: var(--green-700);
-        border: 1px solid var(--green-100);
-        border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; font-weight: 500;
-    }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green-600); display: inline-block; }
-
-    .notice {
-        background: var(--amber-bg); border: 1px solid var(--amber-bd);
-        color: var(--amber-tx); border-radius: 12px;
-        padding: 12px 14px; font-size: 0.8rem; line-height: 1.5;
+        background: #F0FDF4;
+        color: #166534;
+        border: 1px solid #DCFCE7;
+        border-radius: 20px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 10px;
     }
 
-    /* ---------- Buttons ---------- */
+    .prediction-tag {
+        display: inline-block;
+        background: #EFF6FF;
+        color: #1D4ED8;
+        border: 1px solid #BFDBFE;
+        border-radius: 20px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+
+    .message-time {
+        color: #64748B;
+        font-size: 11px;
+        margin-top: 12px;
+    }
+
+    /* Buttons */
+
     div.stButton > button {
         border-radius: 10px;
-        border: 1px solid var(--line);
-        background: #fff;
-        color: var(--ink);
+        background-color: white;
+        color: #0F172A;
+        border: 1px solid #E2E8F0;
         font-weight: 500;
         text-align: left;
-        transition: all 0.15s ease;
     }
+
     div.stButton > button:hover {
-        border-color: var(--green-600);
-        color: var(--green-700);
-        background: var(--green-50);
+        border-color: #16A34A;
+        background-color: #F0FDF4;
+        color: #166534;
     }
 
-    [data-testid="stDownloadButton"] button {
-        border-radius: 10px; width: 100%;
+    h1, h2, h3 {
+        color: #14532D;
     }
 
-    h1, h2, h3 { color: var(--green-800); }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
-# --------------------------------------------------
+# ============================================================
 # SESSION STATE
-# --------------------------------------------------
+# ============================================================
 
 if "rag_messages" not in st.session_state:
     st.session_state.rag_messages = []
@@ -264,330 +250,711 @@ if "rag_results" not in st.session_state:
 if "pending_question" not in st.session_state:
     st.session_state.pending_question = None
 
-
-# --------------------------------------------------
-# HELPERS
-# --------------------------------------------------
-
-def render_evidence(result: dict) -> None:
-    """Show retrieved knowledge as numbered evidence cards."""
-    sources = result.get("retrieved", [])
-
-    if not sources:
-        st.caption("No supporting records were retrieved for this answer.")
-        return
-
-    with st.expander(f"📚 Supporting evidence ({len(sources)} records)"):
-        for i, source in enumerate(sources, start=1):
-            with st.container(border=True):
-                st.markdown(
-                    f"<div class='source-card-title'>"
-                    f"[{i}] {source.get('topic', 'Untitled')}</div>",
-                    unsafe_allow_html=True,
-                )
-                st.write(source.get("text", ""))
+if "pending_prediction" not in st.session_state:
+    st.session_state.pending_prediction = None
 
 
-def render_assistant_message(message: dict, show_evidence: bool) -> None:
-    st.markdown(
-        "<span class='advisory-tag'>🌱 Irrigation Advisory</span>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(message["content"])
+# ============================================================
+# LOAD RAG RETRIEVER
+# ============================================================
 
-    if message.get("time"):
-        st.markdown(
-            f"<div class='meta'>Generated at {message['time']}</div>",
-            unsafe_allow_html=True,
-        )
-
-    if show_evidence:
-        idx = message.get("result_index")
-        if idx is not None and idx < len(st.session_state.rag_results):
-            render_evidence(st.session_state.rag_results[idx])
-
-
-def build_transcript() -> str:
-    lines = ["SmartIrrigate AI - Conversation Transcript", "=" * 44, ""]
-    for m in st.session_state.rag_messages:
-        who = "You" if m["role"] == "user" else "SmartIrrigate AI"
-        lines.append(f"{who}:\n{m['content']}\n")
-    lines.append("-" * 44)
-    lines.append(
-        "Educational prototype. Recommendations are not field-validated."
-    )
-    return "\n".join(lines)
-
-
-# --------------------------------------------------
-# CACHED RETRIEVER
-# --------------------------------------------------
-
-@st.cache_resource(show_spinner="Loading irrigation knowledge base...")
+@st.cache_resource(
+    show_spinner="Loading agricultural knowledge base..."
+)
 def load_retriever():
+
     return DemoRetriever(
         mode="huggingface",
         k=4,
     )
 
 
-# --------------------------------------------------
-# LOAD KNOWLEDGE BASE
-# --------------------------------------------------
-
-kb_error = None
 retriever = None
+kb_error = None
 
 try:
     retriever = load_retriever()
+
 except Exception as exc:
-    kb_error = exc
+    kb_error = str(exc)
 
 
-# --------------------------------------------------
-# SIDEBAR
-# --------------------------------------------------
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
 
-with st.sidebar:
+def current_time():
 
-    st.markdown(
-        """
-        <div class="brand">
-            <div class="logo">🌱</div>
-            <div>
-                <div class="name">SmartIrrigate AI</div>
-                <div class="sub">Irrigation Advisory Assistant</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    return datetime.now().strftime("%H:%M")
 
-    st.write("")
 
-    if kb_error is None:
+def is_cancel_request(text):
+    """
+    Detect an explicit request to cancel an unfinished prediction.
+    """
+
+    return text.strip().lower() in {
+        "cancel",
+        "cancel prediction",
+        "stop prediction",
+        "exit prediction",
+        "reset prediction",
+    }
+
+
+def is_prediction_followup(text):
+    """
+    Detect whether a message contains named prediction inputs.
+
+    A normal agricultural question must not be treated
+    as a prediction follow-up.
+    """
+
+    return bool(extract_inputs(text))
+
+
+def add_assistant_message(
+    content,
+    kind="rag",
+    result_index=None,
+):
+
+    message = {
+        "role": "assistant",
+        "content": content,
+        "kind": kind,
+        "result_index": result_index,
+        "time": current_time(),
+    }
+
+    st.session_state.rag_messages.append(message)
+
+    return message
+
+
+def render_evidence(result):
+
+    sources = result.get("retrieved", [])
+
+    if not sources:
+        return
+
+    with st.expander(
+        f"📚 Supporting evidence ({len(sources)} records)"
+    ):
+
+        for index, source in enumerate(
+            sources,
+            start=1,
+        ):
+
+            with st.container(border=True):
+
+                st.markdown(
+                    f"**[{index}] "
+                    f"{source.get('topic', 'Agricultural Knowledge')}**"
+                )
+
+                st.write(
+                    source.get("text", "")
+                )
+
+
+def render_assistant_message(message, show_sources):
+
+    kind = message.get("kind", "rag")
+
+    if kind == "prediction":
+
         st.markdown(
-            "<span class='status-ok'><span class='dot'></span>Knowledge base online</span>",
+            '<span class="prediction-tag">'
+            '🧮 ML Irrigation Prediction'
+            '</span>',
             unsafe_allow_html=True,
         )
 
-    st.markdown("<div class='section-title'>System</div>", unsafe_allow_html=True)
+    elif kind == "system":
+
+        st.markdown(
+            '<span class="advisory-tag">'
+            '🌱 SmartIrrigate AI'
+            '</span>',
+            unsafe_allow_html=True,
+        )
+
+    else:
+
+        st.markdown(
+            '<span class="advisory-tag">'
+            '🌱 Agricultural Advisory'
+            '</span>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown(
-        f"""
-        <div class="sys-row"><span class="k">Language model</span><span class="v">{DEFAULT_LLM}</span></div>
-        <div class="sys-row"><span class="k">Runtime</span><span class="v">Ollama (local)</span></div>
-        <div class="sys-row"><span class="k">Embeddings</span><span class="v">Multilingual MiniLM</span></div>
-        <div class="sys-row"><span class="k">Vector store</span><span class="v">FAISS</span></div>
-        <div class="sys-row"><span class="k">Framework</span><span class="v">LangChain</span></div>
-        """,
-        unsafe_allow_html=True,
+        message["content"]
     )
 
-    st.markdown("<div class='section-title'>Settings</div>", unsafe_allow_html=True)
+    if message.get("time"):
+
+        st.markdown(
+            f'<div class="message-time">'
+            f'{message["time"]}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    if show_sources and kind == "rag":
+
+        result_index = message.get("result_index")
+
+        if (
+            result_index is not None
+            and result_index < len(st.session_state.rag_results)
+        ):
+
+            result = st.session_state.rag_results[
+                result_index
+            ]
+
+            render_evidence(result)
+
+
+def build_transcript():
+
+    lines = [
+        "SmartIrrigate AI",
+        "Conversation Transcript",
+        "=" * 45,
+        "",
+    ]
+
+    for message in st.session_state.rag_messages:
+
+        role = (
+            "You"
+            if message["role"] == "user"
+            else "SmartIrrigate AI"
+        )
+
+        lines.append(
+            f"{role}:\n{message['content']}\n"
+        )
+
+    lines.append(
+        "\nEducational prototype. "
+        "Predictions are not field-validated."
+    )
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.markdown("## 🌱 SmartIrrigate AI")
+
+    st.caption(
+        "Multilingual Agricultural Advisory Assistant"
+    )
+
+    st.divider()
+
+    st.markdown("### System Information")
+
+    st.markdown(
+        f"**Language Model:** `{DEFAULT_LLM}`"
+    )
+
+    st.markdown(
+        "**RAG Framework:** LangChain"
+    )
+
+    st.markdown(
+        "**Embeddings:** Hugging Face MiniLM"
+    )
+
+    st.markdown(
+        "**Vector Database:** FAISS"
+    )
+
+    st.markdown(
+        "**ML Prediction:** Scikit-learn"
+    )
+
+    st.divider()
+
+    st.markdown("### Settings")
 
     show_sources = st.toggle(
         "Show supporting evidence",
         value=False,
-        help="Display the knowledge records used to generate each answer.",
     )
 
-    if st.button("🗑️  Clear conversation", use_container_width=True):
+    if st.button(
+        "🗑️ Clear Conversation",
+        use_container_width=True,
+    ):
+
         st.session_state.rag_messages = []
         st.session_state.rag_results = []
         st.session_state.pending_question = None
-        st.rerun()
-    st.write("")
+        st.session_state.pending_prediction = None
 
-# --------------------------------------------------
-# HERO HEADER
-# --------------------------------------------------
+        st.rerun()
+
+    if st.session_state.pending_prediction is not None:
+
+        st.info(
+            "An irrigation prediction is waiting "
+            "for additional input values."
+        )
+
+        if st.button(
+            "Cancel Pending Prediction",
+            use_container_width=True,
+        ):
+
+            st.session_state.pending_prediction = None
+
+            st.rerun()
+
+    st.divider()
+
+    if st.session_state.rag_messages:
+
+        transcript = build_transcript()
+
+        st.download_button(
+            "📥 Download Conversation",
+            data=transcript,
+            file_name="SmartIrrigate_Conversation.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+    st.divider()
+
+    st.caption(
+        "Educational AI prototype. "
+        "Agricultural recommendations should be "
+        "verified against local field conditions."
+    )
+
+
+# ============================================================
+# HERO SECTION
+# ============================================================
 
 st.markdown(
     """
     <div class="hero">
-        <div class="hero-top">
-            <div class="hero-logo">🌱</div>
-            <div>
-                <h1>SmartIrrigate AI</h1>
-                <div class="tagline">Multilingual irrigation advisory powered by retrieval-augmented AI</div>
-            </div>
-        </div>
-        <p class="desc">
-            Get guidance on irrigation timing, soil moisture, crop water requirements,
-            and rainfall planning, grounded in a curated agricultural knowledge base.
+
+        <h1>🌱 SmartIrrigate AI</h1>
+
+        <p>
+            Your intelligent multilingual agricultural assistant.
+            Ask questions about irrigation, soil moisture,
+            rainfall, crop water requirements, or generate
+            ML-based irrigation predictions.
         </p>
+
     </div>
     """,
     unsafe_allow_html=True,
 )
-# --------------------------------------------------
-# KNOWLEDGE BASE ERROR
-# --------------------------------------------------
 
-if kb_error is not None:
-    st.error(f"Unable to load the irrigation knowledge base: {kb_error}")
-    st.info(
-        "Check that knowledge/synthetic_guidance.json exists "
-        "and the required embedding dependencies are installed."
+
+# ============================================================
+# KNOWLEDGE BASE STATUS
+# ============================================================
+
+if kb_error:
+
+    st.warning(
+        "The agricultural knowledge base could not be loaded. "
+        "RAG responses may be unavailable."
     )
-    st.stop()
+
+    with st.expander("Knowledge base error"):
+        st.code(kb_error)
 
 
-# --------------------------------------------------
-# WELCOME / SUGGESTED QUESTIONS
-# --------------------------------------------------
+# ============================================================
+# WELCOME SCREEN
+# ============================================================
 
 if not st.session_state.rag_messages:
 
-    st.markdown(
-        "<div class='section-title'>What I can help with</div>",
-        unsafe_allow_html=True,
-    )
+    st.subheader("What I Can Help With")
 
-    f1, f2, f3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
 
     features = [
-        (f1, "⏱️", "Irrigation timing", "When and how often to irrigate different crops across growth stages."),
-        (f2, "🌡️", "Soil & weather", "How soil moisture and rainfall should shape your watering decisions."),
-        (f3, "🗣️", "Your language", "Ask in English, Hindi, Gujarati, or Marathi and get answers back in kind."),
+        (
+            col1,
+            "🌱",
+            "Agricultural Advisory",
+            "Ask questions about irrigation timing, "
+            "water conservation, and crop management.",
+        ),
+        (
+            col2,
+            "🧮",
+            "ML Irrigation Prediction",
+            "Predict irrigation requirements using "
+            "soil moisture, temperature, crop age, "
+            "and rainfall probability.",
+        ),
+        (
+            col3,
+            "🌍",
+            "Multilingual Chatbot",
+            "Ask agricultural questions in English, "
+            "Hindi, or Gujarati.",
+        ),
     ]
 
-    for col, icon, title, text in features:
-        with col:
+    for column, icon, title, description in features:
+
+        with column:
+
             st.markdown(
-                f"<div class='feature'><div class='icon'>{icon}</div>"
-                f"<div class='title'>{title}</div>"
-                f"<div class='text'>{text}</div></div>",
+                f"""
+                <div class="feature-card">
+
+                    <div class="feature-icon">
+                        {icon}
+                    </div>
+
+                    <div class="feature-title">
+                        {title}
+                    </div>
+
+                    <div class="feature-description">
+                        {description}
+                    </div>
+
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
 
-    st.markdown(
-        "<div class='section-title'>Try asking</div>"
-        "<div class='section-sub'>Select a question to get started.</div>",
-        unsafe_allow_html=True,
-    )
+    st.subheader("Try Asking")
 
     suggestions = [
+        "What are the benefits of drip irrigation?",
         "When should I irrigate sugarcane?",
-        "गन्ने की फसल में सिंचाई कब करनी चाहिए?",
-        "શેરડીના પાકમાં પાણી ક્યારે આપવું જોઈએ?",
-        "How does soil moisture affect irrigation?",
+        "ગન્નાના પાકમાં સિંચાઈ ક્યારે કરવી જોઈએ?",
+        (
+            "Predict irrigation: soil moisture 25%, "
+            "temperature 34 C, crop age 5 months, "
+            "rain probability 20%"
+        ),
     ]
 
     left, right = st.columns(2)
 
-    for index, question in enumerate(suggestions):
-        with left if index % 2 == 0 else right:
+    for index, suggestion in enumerate(suggestions):
+
+        column = left if index % 2 == 0 else right
+
+        with column:
+
             if st.button(
-                question,
+                suggestion,
                 key=f"suggestion_{index}",
                 use_container_width=True,
             ):
-                st.session_state.pending_question = question
+
+                st.session_state.pending_question = suggestion
+
                 st.rerun()
 
-else:
-    st.markdown(
-        "<div class='section-title'>Conversation</div>",
-        unsafe_allow_html=True,
-    )
 
-
-# --------------------------------------------------
+# ============================================================
 # DISPLAY CHAT HISTORY
-# --------------------------------------------------
+# ============================================================
 
 for message in st.session_state.rag_messages:
 
-    avatar = "🧑‍🌾" if message["role"] == "user" else "🌱"
+    avatar = (
+        "🧑‍🌾"
+        if message["role"] == "user"
+        else "🌱"
+    )
 
-    with st.chat_message(message["role"], avatar=avatar):
+    with st.chat_message(
+        message["role"],
+        avatar=avatar,
+    ):
+
         if message["role"] == "assistant":
-            render_assistant_message(message, show_sources)
+
+            render_assistant_message(
+                message,
+                show_sources,
+            )
+
         else:
-            st.markdown(message["content"])
+
+            st.markdown(
+                message["content"]
+            )
 
 
-# --------------------------------------------------
-# QUESTION INPUT
-# --------------------------------------------------
+# ============================================================
+# CHAT INPUT
+# ============================================================
 
-typed_question = st.chat_input("Ask your irrigation question in any supported language...")
+typed_question = st.chat_input(
+    "Ask an agricultural question or request an irrigation prediction..."
+)
 
 suggested_question = st.session_state.pending_question
 
 if suggested_question:
+
     st.session_state.pending_question = None
 
 question = suggested_question or typed_question
 
 
-# --------------------------------------------------
-# GENERATE RESPONSE
-# --------------------------------------------------
+# ============================================================
+# CHAT RESPONSE ROUTING
+# ============================================================
 
-if question:
+if question and question.strip():
+
+    question = question.strip()
 
     previous_history = [
-        {"role": m["role"], "content": m["content"]}
-        for m in st.session_state.rag_messages
+        {
+            "role": message["role"],
+            "content": message["content"],
+        }
+        for message in st.session_state.rag_messages
     ]
 
-    st.session_state.rag_messages.append(
-        {"role": "user", "content": question}
-    )
+    st.session_state.rag_messages.append({
+        "role": "user",
+        "content": question,
+    })
 
-    with st.chat_message("user", avatar="🧑‍🌾"):
+    with st.chat_message(
+        "user",
+        avatar="🧑‍🌾",
+    ):
+
         st.markdown(question)
 
-    with st.chat_message("assistant", avatar="🌱"):
+    with st.chat_message(
+        "assistant",
+        avatar="🌱",
+    ):
 
-        with st.spinner("Analysing your question and retrieving guidance..."):
+        try:
 
-            try:
+            # ==========================================
+            # 1. CANCEL AN UNFINISHED PREDICTION
+            # ==========================================
 
-                result = ask(
-                    question=question,
-                    language="Auto",
-                    retriever=retriever,
-                    use_llm=True,
-                    history=previous_history,
+            if is_cancel_request(question):
+
+                st.session_state.pending_prediction = None
+
+                answer = (
+                    "The pending irrigation prediction "
+                    "has been cancelled. You can ask "
+                    "another agricultural question or "
+                    "start a new prediction."
                 )
 
-                answer = result.get(
-                    "answer",
-                    "Sorry, I couldn't generate a response.",
+                message = add_assistant_message(
+                    answer,
+                    kind="system",
                 )
 
-                result_index = len(st.session_state.rag_results)
-                st.session_state.rag_results.append(result)
+                render_assistant_message(
+                    message,
+                    show_sources,
+                )
 
-                assistant_message = {
-                    "role": "assistant",
-                    "content": answer,
-                    "result_index": result_index,
-                    "time": datetime.now().strftime("%H:%M"),
-                }
+            else:
 
-                st.session_state.rag_messages.append(assistant_message)
+                # ======================================
+                # 2. DETECT REQUEST TYPE
+                # ======================================
 
-                render_assistant_message(assistant_message, show_sources)
+                prediction_requested = (
+                    is_prediction_request(question)
+                )
 
-                if result.get("error"):
-                    st.error("The advisory engine encountered an error.")
+                prediction_pending = (
+                    st.session_state.pending_prediction
+                    is not None
+                )
 
-                    with st.expander("View error details", expanded=True):
-                        st.code(str(result["error"]))
+                prediction_followup = False
 
-                    print(
-                        "\n========== STREAMLIT RAG ERROR ==========\n",
-                        result["error"],
-                        "\n=========================================\n",
-                        flush=True,
+                if prediction_pending:
+
+                    prediction_followup = (
+                        is_prediction_followup(question)
                     )
 
-            except Exception as exc:
+                # IMPORTANT:
+                #
+                # An unfinished prediction alone does
+                # not force the next message into ML.
+                #
+                # Normal agricultural questions must
+                # continue using RAG.
 
-                st.error(f"Unable to generate an advisory: {exc}")
+                prediction_mode = (
+                    prediction_requested
+                    or (
+                        prediction_pending
+                        and prediction_followup
+                    )
+                )
 
+                # ======================================
+                # 3. ML PREDICTION
+                # ======================================
+
+                if prediction_mode:
+
+                    with st.spinner(
+                        "Running ML irrigation prediction..."
+                    ):
+
+                        # Explicit new prediction requests
+                        # start with fresh input values.
+
+                        if prediction_requested:
+
+                            pending_values = None
+
+                        else:
+
+                            pending_values = (
+                                st.session_state.pending_prediction
+                            )
+
+                        answer, updated_pending = (
+                            answer_prediction(
+                                text=question,
+                                pending=pending_values,
+                            )
+                        )
+
+                        st.session_state.pending_prediction = (
+                            updated_pending
+                        )
+
+                        message = add_assistant_message(
+                            answer,
+                            kind="prediction",
+                        )
+
+                        render_assistant_message(
+                            message,
+                            show_sources,
+                        )
+
+                # ======================================
+                # 4. NORMAL RAG QUESTION
+                # ======================================
+
+                else:
+
+                    with st.spinner(
+                        "Searching agricultural knowledge..."
+                    ):
+
+                        if retriever is None:
+
+                            answer = (
+                                "The agricultural knowledge "
+                                "base is currently unavailable. "
+                                "Please check the retrieval "
+                                "configuration."
+                            )
+
+                            message = add_assistant_message(
+                                answer,
+                                kind="system",
+                            )
+
+                            render_assistant_message(
+                                message,
+                                show_sources,
+                            )
+
+                        else:
+
+                            result = ask(
+                                question=question,
+                                language="Auto",
+                                retriever=retriever,
+                                use_llm=True,
+                                history=previous_history,
+                            )
+
+                            answer = result.get(
+                                "answer",
+                                (
+                                    "Sorry, I couldn't "
+                                    "generate a response."
+                                ),
+                            )
+
+                            result_index = len(
+                                st.session_state.rag_results
+                            )
+
+                            st.session_state.rag_results.append(
+                                result
+                            )
+
+                            message = add_assistant_message(
+                                answer,
+                                kind="rag",
+                                result_index=result_index,
+                            )
+
+                            render_assistant_message(
+                                message,
+                                show_sources,
+                            )
+
+                            if result.get("error"):
+
+                                st.warning(
+                                    "The language model "
+                                    "encountered an error."
+                                )
+
+                                with st.expander(
+                                    "View error details"
+                                ):
+
+                                    st.code(
+                                        str(result["error"])
+                                    )
+
+        except Exception as exc:
+
+            st.error(
+                f"Unable to process your request: {exc}"
+            )
+
+            print(
+                "SMARTIRRIGATE ERROR:",
+                repr(exc),
+                flush=True,
+            )
